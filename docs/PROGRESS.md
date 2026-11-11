@@ -1,0 +1,241 @@
+# PROGRESS
+
+Current phase: **5 — Deploy — in progress (2026-10-11, owner-approved urgent deployment repair); Phase 3 remains pending.**
+
+## Definition of done (every phase)
+- [x] `npm run build` succeeds as a static export
+- [x] No TypeScript / ESLint errors
+- [x] RTL and LTR both verified
+- [x] No secrets in the repo
+- [x] RLS verified (anon cannot write; anon cannot read drafts) — from Phase 1
+- [x] This file updated
+
+## Phases
+- [x] **0 Scaffold** — Next.js static export, TS strict, Tailwind (logical props), next-intl ar/en, fonts, site + admin layouts, lint/format, env, basePath, root redirect
+- [x] **1 Supabase** — migrations (schema + RLS + storage), type generation, seed.sql from Appendix A (drafts), README steps (project + admin user)
+- [x] **2 Public site** — layout/header/footer/WhatsApp, Home, Products listing (filters + search + URL state), Product page, About, Contact, 404
+- [ ] **3 Admin core** — login, guard, dashboard, products list, add/edit product, image + PDF pipeline, duplicate/delete/publish
+- [ ] **4 Admin extras** — categories, brands, series, specs, settings, certificates, projects
+- [ ] **5 Deploy** — Edge Function trigger-deploy, GitHub Actions, "Publish changes", weekly cron + external keep-alive, docs (implementation restored; hosted setup and production verification pending)
+- [ ] **6 SEO & polish** — sitemap/robots/hreflang/JSON-LD/OG, a11y pass, perf pass (Lighthouse ≥ 90 mobile), empty/error states, final README
+
+## Log
+
+### 2026-10-01 — Phase 0: Scaffold ✅
+**Built**
+- Next.js 16.3.8 static export (`output: 'export'`, `trailingSlash`, `images.unoptimized`, `basePath` from `NEXT_PUBLIC_BASE_PATH`), TS strict, Tailwind v4 with DESIGN.md tokens in `@theme`, Prettier + ESLint (`no-explicit-any` = error).
+- next-intl 4.14.8 without middleware: `src/lib/i18n/{routing,request,navigation}.ts`, locale via `next/root-params`, `ar` default, `localePrefix: 'always'`, `generateStaticParams`.
+- Three root layouts: `(site)/[locale]` (lang/dir per locale + `NextIntlClientProvider`), `(admin)` (Arabic RTL, noindex), `(redirect)` (static `/` → `/ar/` meta-refresh + JS fallback, basePath-aware).
+- Bilingual 404 via `app/global-not-found.tsx` (`experimental.globalNotFound`) → `out/404.html`.
+- Fonts via `next/font/google`: Cairo / Inter / JetBrains Mono (`src/lib/fonts.ts`), per-locale family selection in CSS.
+- `.env.example`, README skeleton, `scripts/serve.mjs` (static server emulating GitHub Pages), `public/.nojekyll`, minimal AR/EN messages + placeholder pages.
+
+**Verified** (commands + results)
+- `npm run build` → OK, routes `/`, `/[locale]` (ar, en), `/admin`, `/_not-found`; all static (○/●), experiment `globalNotFound` enabled. `out/` contains `index.html`, `ar/`, `en/`, `admin/`, `404.html`, `.nojekyll`.
+- `npm run lint` → 0 problems (probe file with `any` correctly fails, removed after).
+- `npm run typecheck` (`next typegen && tsc --noEmit`, from a clean `.next/`) → 0 errors.
+- `npm run format:check` → all files conform.
+- Served `out/` with `scripts/serve.mjs`: `/` 200 `lang=ar dir=rtl` + `http-equiv refresh → /ar/`; `/ar/` 200 rtl + Arabic content; `/en/` 200 ltr + English content; `/admin/` 200 rtl + `noindex`; unknown path → HTTP 404 with bilingual `404.html`.
+- Rebuilt with `NEXT_PUBLIC_BASE_PATH=/reach-site` and served from a `/reach-site/` prefix: refresh URL, asset URLs, nav links and 404 home link all prefixed; same 200/404 + lang/dir results.
+
+**Decisions**: D-011, D-012, D-013 resolved; D-014…D-021 added (see `DECISIONS.md`).
+
+**Open questions**: none blocking. D-006 (Appendix A ⚠ rows) and D-008 (category icons) remain open for later phases.
+
+### 2026-10-01 — Phase 1: Supabase ✅
+**Built**
+- `supabase/` project (CLI 2.119.0 as devDependency): `config.toml` with ports remapped to 560xx (D-022), `seed.sql` path wired.
+- Four migrations in order: `0001_functions` (`public.is_admin()` from spec §5 verbatim + `set_updated_at()`), `0002_schema` (all 11 tables from §5 with AR/EN column pairs, check constraints, indexes on category/brand/series/is_published/product_images + GIN on `specs`, `updated_at` trigger), `0003_rls` (RLS on 11 tables → 29 policies: public read of published/active rows, admin-only writes, drafts hidden), `0004_storage` (buckets `product-images` webp ≤5 MB, `catalogs` pdf ≤10 MB, `site-assets` ≤5 MB, public read / admin write policies on `storage.objects`).
+- `supabase/seed.sql` — 17 categories, 8 brands, 7 spec definitions, 65 products (Appendix A) all `is_published = false`; availability per D-004; re-runnable (`on conflict do nothing`).
+- `supabase/tests/rls_verify.sql` — DoD suite: seed counts, RLS/policy inventory, anon read/write matrix on all 11 tables + storage, `is_active`/`is_published` filtering, authenticated-no-admin denial, full admin round-trip, `updated_at` trigger, cleanup to pristine state.
+- `src/lib/supabase/database.types.ts` generated (`gen types typescript --local --schema public`), added to `.prettierignore`.
+- README: Supabase section (migration table, local dev, RLS test command, type regeneration, hosted setup incl. disable-signups + admin user + `app_metadata.role='admin'` SQL from current Supabase docs).
+
+**Verified** (commands + results)
+- Local stack: `npx supabase start` (postgres-only exclude variant; full stack not needed this phase) → `Started supabase local development setup` on ports 560xx.
+- `npx supabase db reset` → all 4 migrations + seed applied, exit 0 (run twice — idempotence re-checked).
+- `psql -v ON_ERROR_STOP=1 … < supabase/tests/rls_verify.sql` → **`ALL RLS CHECKS PASSED`**, 0 failures: anon blocked on INSERT (11 tables + storage), 0-row on UPDATE/DELETE (11 + storage), drafts invisible (0 of 65), published/unpublished transitions correct, non-admin authenticated denied, admin full CRUD + storage allowed, all fixtures restored (17/8/7/65 final counts).
+- Types file: 311 lines, UTF-8 without BOM, contains all 11 tables + `is_admin`/`set_updated_at`.
+- `npm run build` / `npm run lint` / `npm run typecheck` / `npm run format:check` → all pass (re-run at phase end).
+
+**Environment notes (for future sessions)**
+- C: drive was at 0 GB free → Docker's WSL disk went read-only mid-pull; freed space (npm cache 5.4 GB + temp) and restarted Docker. Watch disk before pulling the full stack (Studio etc. ≈ several GB) — Phase 2+ needs `kong`/`postgrest` at minimum for supabase-js.
+- `config.toml` ports are 560xx (D-022). Local DB URL: `postgresql://postgres:postgres@127.0.0.1:56022/postgres`.
+- psql on this machine ignores options placed **after** the connection string — always put `-v`/`-f` first; PowerShell lacks `<` redirect.
+
+**Decisions**: D-022…D-027 added (see `DECISIONS.md`).
+
+**Open questions**: D-006 (⚠ rows 46/65 need owner confirmation), D-005 (placeholder contact/certificate data — Phase 2 will need at least contact numbers; who seeds them: admin UI in Phase 4 or SQL placeholder in Phase 2?).
+
+### 2026-10-01 — Phase 2: Public site —
+
+**Built**
+- Layout & chrome: `(site)/[locale]/layout.tsx` (skip link, header, footer, floating WhatsApp), `site-header` (topbar hours+phone, nav, language switch preserving query, mobile menu), `site-footer` (phones, socials, nav, legal), `floating-whatsapp`.
+- Data layer: `src/lib/supabase/server.ts` (server-only build-time client) + `src/lib/supabase/queries.ts` (typed, `cache()`-wrapped queries per D-029).
+- Pages: Home (hero with `*highlight*` parsing + decorative panel, categories, featured, brands, why-us, certificates/projects conditionals, CTA), Products listing, Product detail (breadcrumbs, gallery+lightbox, chips, labelled spec table, catalog AR/EN fallback, WhatsApp quote, related), About, Contact, per-locale `not-found`.
+- Products explorer: debounced search (MiniSearch + `normalizeArabic()`, D-031), facet filters (category/brand/system/availability + spec groups for a single category), chips, sort (D-037), sticky sidebar / mobile drawer, 24-per-page load-more, empty state with WhatsApp CTA, URL state per D-030.
+- Components: `product-card` (cover/glyph, availability badge, 3-value spec line per D-038), `category-tile`, `breadcrumbs`, `section-heading`, `lightbox`, `hero-panel`, `certificates-grid`, quote button, 17-slug icon map (D-032), `waLink`/`telLink` helpers, `splitHighlight`.
+- Full AR/EN copy: `src/messages/{ar,en}.json` (meta, nav, common, availability, system, home, products, product, about, contact, footer, notFound).
+- Seed additions (D-033): placeholder contact numbers, social links, site texts; all 65 products published locally (D-034); RLS suite made publish-state-agnostic.
+
+**Verified** (commands + results)
+- `npm run typecheck` — 0 errors. `npm run lint` — 0 problems (fixed 3× `react-hooks/set-state-in-effect` with render-adjustment/close-on-click patterns, 3× `react-hooks/static-components` with `categoryGlyph()`). `npm run format` — clean.
+- `npm run build` — OK: 143 static pages (ar+en for all pages, 130 product pages = 65 slugs × 2 locales), `globalNotFound` intact.
+- `npm run serve` (port 4173): `/ar/`, `/en/`, `/ar/products/`, `/ar/products/hst-mcp`, `/ar/about/`, `/ar/contact/`, `/en/products/` → 200; unknown path → HTTP 404; `/ar/products/?q=panel&sort=name_asc&category=control-panels` → 200.
+- HTML checks: AR `lang=ar dir=rtl`, EN `dir=ltr`; hero marker fully parsed; `wa.me` links present; phones carry `dir="ltr"` (header, footer, contact); hero panel `aria-hidden`; spec table renders when specs exist (`hst-economy-4-zone-panel` → `{"zones":4}`) and is omitted when `{}` (`hst-mcp`); home renders featured cards + product links; certificates/projects sections hidden while tables are empty (0 rows — no invented data); products listing prerender = skeleton (D-030), explorer present in client chunks.
+- DB after publish: 65 published / 8 featured / 17 categories / 17 settings / 2 phones / 3 socials / 7 spec defs / 8 brands / 0 certificates / 0 projects.
+- `supabase/tests/rls_verify.sql` → `ALL RLS CHECKS PASSED` after the publish update, fixture counts restored (D-034).
+
+**Decisions**: D-028…D-039 added; D-008 resolved (see `DECISIONS.md`).
+
+**Open questions**: D-006 (⚠ rows 46/65 need owner confirmation) and D-005 (phone numbers remain placeholders; certificates/projects stay hidden until real rows exist). Social-link seed placeholders were removed in the 2026-10-05 follow-up; verified public profiles and the RECH handle mismatch still need owner confirmation.
+
+### 2026-10-02 — Phase 2 re-verification + local port move ✅
+- Windows `netsh` exclusion ranges shifted again: 553xx became forbidden, so the local stack moved to **560xx** (`supabase/config.toml`, `.env.local`, README, this file, D-022). Docker Desktop was restarted from scratch; `npx supabase start` green on the new ports, legacy anon key still accepted by REST.
+- `npm run typecheck` / `npm run lint` / `npm run format` (one file re-formatted) → 0 errors; `npm run build` → 143 static pages, all routes SSG/static.
+- `npm run serve` route matrix re-run: `/ar/`+`/en/` (lang/dir correct), products listing/detail (both locales), about, contact, admin (noindex), query-string listing URL → 200; unknown path → HTTP 404; `wa.me` + `dir="ltr"` phones present; hero marker parsed; spec table present on `hst-economy-4-zone-panel`, absent on `hst-mcp`; certificates/projects sections hidden (0 rows).
+- `psql -f supabase/tests/rls_verify.sql` → **ALL RLS CHECKS PASSED**, fixtures restored (17/8/7/65, 2 phones, 3 socials, 17 settings, 0 images/certificates/projects).
+- Secret scan: no `service_role`/tokens in tracked files; `.env.local` git-ignored.
+
+### 2026-10-03 — Audit pass: responsive + WCAG ✅
+**Built**
+- `src/lib/use-dialog.ts` — shared focus-in / Tab-trap / scroll-lock / focus-restore hook (D-042), used by `products-explorer` (filter drawer) and `lightbox`.
+- Fixes: `grid-cols-1` on 18 grids (D-040), global focus outline + `::placeholder` (D-041), absolutely positioned mobile menu + outside-click close (D-045), 44px controls / ≥24px inline links (D-043), 16px fields (D-044), specs table `overflow-x-auto`, safe-area insets on floating WhatsApp + toast, `rtl:origin-right` on the product-card accent bar, lightbox `85dvh` + RTL arrow keys.
+- Also fixed a pre-existing lint error in `site-header` (`react-hooks/set-state-in-effect` → render-phase adjustment, same pattern as the explorer).
+
+**Verified** (Chrome headless CDP against the static `out/` build, no npm deps added)
+- `npm run lint` / `npm run typecheck` / `npm run build` → all green; 146 static pages.
+- Viewport matrix 8 pages × 320/375/414/768/1024/1280 (48 combos): **0 horizontal scroll, 0 layout errors, 0 undersized inputs**; 46/48 fully clean, the 2 remaining only flag the 16px checkbox *inside* its 32px label (D-043).
+- Before → after at 320px: `/ar/` scrollWidth 369 → 320, `/en/` 323 → 320.
+- Interaction tests: mobile menu open no longer shifts content (mainTop 121 → 121, was 116 → 350); filter drawer focuses its close button, locks body scroll, keeps Tab inside, restores focus; focus ring computed as `2px solid rgb(215,38,30)` with no radius override.
+- Lightbox verified through a temporary static harness page (removed afterwards, `out/` rebuilt clean): focus-in, scroll lock, Escape close, focus restore, and **RTL arrow mirroring** (AR: ArrowRight → previous; EN: ArrowRight → next).
+
+**Not verified**: the authenticated admin UI (no session in the test harness) — code-reviewed only; certificates/projects galleries unreachable because those tables are empty (no invented data, D-005).
+
+**Decisions**: D-040–D-045 added. **Open questions**: D-043 strict-44px?, plus two pre-existing files failing `format:check` that were left untouched: `src/app/(site)/[locale]/layout.tsx`, `start.md`.
+
+### 2026-10-05 — Phase 2 public conversion follow-up (verification blocked)
+**Built**
+- Added the bilingual `/[locale]/contractors/` landing page, linked from the main navigation and prominent home-page CTAs. The request form validates client-side with the existing Zod dependency, opens WhatsApp with all fields and a source tag, and states that drawings must be attached manually (the static site has no lead-submission endpoint).
+- Added catalog downloads only for published products with catalog URLs; no empty downloads section is shown.
+- Hid categories with zero published products on the home page and in filters; corrected Arabic category labels without changing slugs. Removed generic Chinese-origin data from brand presentation, centralized display spellings, and added migration updates for existing data.
+- Replaced installation-adjacent/unsupported copy with supply-only messaging, removed placeholder About text and fake seeded social links, and strip `fbclid` when rendering links. The header shows every active contact number and picks a marked WhatsApp destination randomly per click.
+
+**Verified**
+- `npm run lint` → 0 problems; `npm run typecheck` → 0 errors; Prettier check on touched application files → clean.
+- Arabic/English public message keys → 173 each, no missing keys.
+- `next build` compiled and passed TypeScript, but failed while collecting product route data because `NEXT_PUBLIC_SUPABASE_URL` points to the stopped local service at `127.0.0.1:56021`. `npx supabase start` could not start because Docker Desktop's Linux engine is unavailable. The new database migration is therefore not yet applied or locally validated, and no new production export/browser layout test was produced.
+- No `.github/workflows/deploy.yml` exists in this checkout; deployment automation remains outside this phase.
+
+**Open follow-ups**
+- Start Docker/Supabase, apply and verify the new migration, then rerun the production build and AR/EN RTL/LTR viewport checks before marking this follow-up verified.
+- Bases, batteries and cables are essential to a complete BOQ; add verified products for any of these categories that remain empty. Do not invent catalog entries.
+- Confirm Snower's official Arabic spelling and which (if either) RECH social handle is official. Certificate, project/client, and verified social-profile data remain absent/owner-provided only.
+- SEO work (sitemap, robots, hreflang, Open Graph and structured data) is deferred to Phase 6 per the approved phase gate.
+
+**Decisions**: D-046–D-050 added. Phase 3 has not started.
+
+### 2026-10-06 — Phase 2 public header contact details
+**Built**
+- The top strip labels every active phone number in the selected language.
+- Expanded the seeded working-hours text to explicitly say Saturday through Thursday, 9:00 AM to 6:00 PM. A migration updates only the unchanged original placeholder pair, leaving owner-customized hours intact.
+- Replaced the seeded placeholder phone numbers with the owner-provided sales/WhatsApp and technical-support numbers. The new migration updates only the two original placeholder numbers in existing databases.
+
+**Verification**
+- `npm run lint`, `npm run typecheck`, and Prettier checks on the changed TypeScript/docs passed.
+- `npm run build` compiled and passed TypeScript, but failed while collecting product pages because the configured local Supabase endpoint is unavailable. The hours and contact-number migrations were not applied or database-validated.
+
+**Decisions**: D-051–D-052 added. Phone-number role mapping follows the existing seed order (sales/WhatsApp first, technical support second).
+
+### 2026-10-11 — Phase 5: restore live publishing (in progress)
+**Why**: The owner reported that database changes were not reaching GitHub Pages. GitHub reports the `Deploy Next.js to GitHub Pages` workflow as deleted on `main`; the most recent successful deployment was a `repository_dispatch` build on 2026-10-05. The dashboard also had no publish action.
+
+**Built**
+- Restored `.github/workflows/deploy.yml`: build on pushes to `main`, manual dispatch, `content-updated` repository dispatch and weekly schedule; validates required Supabase settings, builds static output and deploys the artifact to Pages.
+- Added `supabase/functions/trigger-deploy/`: verifies the caller through Supabase Auth and requires `app_metadata.role = 'admin'` before dispatching a build with the GitHub token held only in Supabase secrets.
+- Added a bilingual **Publish changes** control to the admin dashboard. After database edits, the admin can trigger a new static build and see success/failure feedback.
+- Documented GitHub Pages settings/secrets, Edge Function deployment and a free external Supabase keep-alive in the README.
+
+**Verified**
+- GitHub API confirmed the workflow is currently deleted and its latest successful run was on 2026-10-05. The previously used repository-dispatch deployment completed both build and deploy jobs successfully.
+- Local TypeScript/lint/build and live GitHub Pages deployment still need to be run/verified. Production wiring additionally requires GitHub Pages Actions configuration, two GitHub Actions secrets, deployment of the Edge Function, and Supabase secrets `GITHUB_TOKEN` / `GITHUB_REPO`.
+
+**Decisions**: D-053–D-056 added. Phase 3 remains pending; this urgent Phase 5 repair was explicitly approved by the owner. **Open**: production secrets and Edge Function must be configured in the hosted dashboards before the button can work.
+
+### 2026-10-11 — Phase 4: contact numbers and certificates (partial)
+**Built**
+- Added protected admin management pages at `/admin/settings/` for bilingual contact numbers and `/admin/certificates/` for bilingual certificate metadata and image uploads.
+- Added create, edit, and delete flows, active/WhatsApp controls, display ordering, E.164 phone validation, certificate image type/size validation, and cleanup of replaced/deleted certificate images in the `site-assets` bucket.
+- Linked both pages from the admin header and dashboard shortcuts. All writes continue to rely on Supabase RLS and the signed-in admin session.
+
+**Verified**
+- `npm run lint`, `npm run typecheck`, and Prettier checks on all changed files pass. Next.js compiled the changes and completed TypeScript validation during `npm run build`.
+- Static page-data collection is blocked because the configured local Supabase endpoint is unavailable (`fetch failed` while loading products); the build therefore did not finish exporting routes. No authenticated browser CRUD test was possible without an available Supabase project/session.
+- Installed versions checked from the lockfile/runtime; Supabase Storage and Next.js App Router APIs checked against official docs.
+- Full Phase 4 remains incomplete; this change covers only contact numbers and certificates.
+
+**Decisions**: D-057 added.
+
+### 2026-10-11 — Public sales-number rotation
+**Built**
+- Every public phone-number placement independently selects from all active contact numbers on page load, including the header, footer, contact blocks, home CTA and product call CTA. Each call link uses the same randomized value shown beside it.
+- Public contact labels identify the pool as Sales / مبيعات. WhatsApp destinations continue to use only active numbers explicitly enabled for WhatsApp.
+
+**Verified**
+- `npm run lint` and `npm run typecheck` pass.
+- `npm run build` compiles and passes TypeScript, but static export is blocked while collecting product pages because the configured local Supabase endpoint is unavailable (`fetch failed`). RTL/LTR browser verification could not be performed without a completed export.
+- Official API documentation checked; installed versions remain Next.js 16.3.8, next-intl 4.14.8, Tailwind CSS 4.3.3 and supabase-js 2.117.2 (D-060).
+
+**Decision**: D-060. Static HTML/no-JavaScript uses the first active number; each hydrated phone location switches to its own random selection.
+
+### 2026-10-11 — Contractor request inbox
+**Built**
+- Added `contractor_requests` with database field/enum checks, timestamp ordering index, and RLS. Visitors may submit only; public reads/updates/deletes are denied. Admins can view and delete submissions.
+- Updated the bilingual contractor form to save the request before opening WhatsApp. Submission errors are shown and do not open WhatsApp. Optional drawing uploads remain manual; only the filename is retained.
+- Added the protected `/admin/requests/` inbox with newest-first records, search, 50-row paging, phone call links, and confirmed deletion. Linked the inbox from the admin header and dashboard.
+- Updated the project specification, README, and bilingual form/admin copy.
+
+**Verified**
+- `npm run lint`, `npm run typecheck`, targeted Prettier check, and `git diff --check` pass.
+- `npm run build` compiles and completes TypeScript, then fails while collecting product page data because the configured Supabase endpoint is unreachable.
+- Supabase migration/RLS SQL execution and static export/browser verification remain blocked by the unavailable Docker Desktop local database; hosted DB migration has not been applied.
+- Supabase generated types currently include the new table shape but need regeneration against the migration once the local Supabase stack is available.
+
+**Decision**: D-061. The owner approved the narrowly scoped anon INSERT-only RLS exception for project requests; requests remain private and admin-managed.
+
+### 2026-10-11 — Contractor request delivery diagnostics
+**Built**
+- Added an additive hosted migration for explicit Supabase Data API table grants and a PostgREST schema-cache reload. RLS still limits anonymous users to submitting and admins to managing records.
+- Added bilingual form error feedback that differentiates a network outage, missing/unavailable table, permission denial, and rejected field data; admin loading now identifies setup, network, and permission problems.
+- Extended RLS verification to assert required API grants. Documented applying the additive migration to an already-created hosted table.
+
+**Verified**
+- `npm run lint`, `npm run typecheck`, targeted Prettier checks, and `git diff --check` pass.
+- Actual submission/list verification remains blocked: `.env.local` targets stopped local Supabase at `127.0.0.1:56021` (`ECONNREFUSED`), Docker Desktop is unavailable, and the hosted project has not been configured in this checkout. No application credentials were changed.
+
+**Decision**: D-062. See `docs/DECISIONS.md`; hosted configuration and migration application remain prerequisites for end-to-end delivery.
+
+### 2026-10-11 — Header map placement and phone display
+**Built**
+- Moved the map link from the navigation actions into the top bar beside the contact numbers.
+- The top bar now displays every active contact number as stored; each other public phone-number placement keeps its independent random selection.
+
+**Verified**
+- `npm run lint`, `npm run typecheck`, targeted Prettier checks, and `git diff --check` pass.
+- `npm run build` compiles and passes TypeScript, but static page-data collection is blocked by the unavailable configured Supabase endpoint (`fetch failed`); no new static export was produced.
+- RTL/LTR browser verification could not be performed without a completed export.
+
+**Decision**: D-063.
+
+### 2026-11-11 — Prepare initial GitHub Pages upload (Phase 5 remains in progress)
+**Built**
+- Prepared the requested empty repository `reach-system/Reach---shop` on branch `main`.
+- Corrected the README's `GITHUB_REPO` secret value to match the requested repository. Kept `start.md` local-only because it contains machine paths and session-continuity notes.
+
+**Verified**
+- `npm ci` completed (421 packages); `npm run lint` and `npm run typecheck` pass.
+- `npm run build` compiles and passes TypeScript, then stops because `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are not configured. No `.env.local` or reachable local Supabase endpoint exists in this checkout, so no static export or browser route verification could be produced.
+- The target GitHub repository exists but has no refs yet. The initial GitHub Pages deployment remains pending the first push and a successful Actions run.
+
+**Open**
+- Confirm the first Pages workflow can read the two Supabase Actions secrets and that the hosted Supabase project (with required migrations/data) is reachable during build. The admin deploy function additionally needs `GITHUB_REPO=reach-system/Reach---shop` and its token stored as Supabase secrets.
