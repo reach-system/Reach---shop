@@ -235,7 +235,19 @@ Current phase: **5 — Deploy — in progress (2026-10-11, owner-approved urgent
 **Verified**
 - `npm ci` completed (421 packages); `npm run lint` and `npm run typecheck` pass.
 - `npm run build` compiles and passes TypeScript, then stops because `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are not configured. No `.env.local` or reachable local Supabase endpoint exists in this checkout, so no static export or browser route verification could be produced.
-- The target GitHub repository exists but has no refs yet. The initial GitHub Pages deployment remains pending the first push and a successful Actions run.
+- The target GitHub repository now has the initial `main` branch and deployment workflow; the first Pages run remains pending a successful Pages setup and static build.
 
 **Open**
 - Confirm the first Pages workflow can read the two Supabase Actions secrets and that the hosted Supabase project (with required migrations/data) is reachable during build. The admin deploy function additionally needs `GITHUB_REPO=reach-system/Reach---shop` and its token stored as Supabase secrets.
+
+### 2026-11-11 — GitHub Pages workflow setup repair
+**Built**
+- Updated `.github/workflows/deploy.yml` to request Pages enablement via `actions/configure-pages`; it accepts an optional repository-scoped `PAGES_TOKEN` secret for first-time setup and falls back to `GITHUB_TOKEN` if Pages is already enabled.
+- Documented the one-time token permissions and the Supabase Actions secrets required for a successful static build.
+
+**Verified**
+- Checked GitHub Actions run `43030441662`: dependency installation succeeded, then `Configure GitHub Pages` failed with `Get Pages site failed ... Not Found`; the build and deploy jobs were skipped.
+- The new workflow has not yet been pushed or run. A successful Pages deployment also requires the hosted Supabase URL and anon key secrets.
+
+**Open**
+- After this workflow change is pushed, add `PAGES_TOKEN` if automatic Pages enablement is denied, and add `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Confirm the next Actions run reaches the static build and deployment jobs.

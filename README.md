@@ -168,12 +168,16 @@ until a new build finishes.
 
 ### One-time GitHub setup
 
-1. In the repository, open **Settings → Pages** and select **GitHub Actions** as the build and
-   deployment source.
-2. Open **Settings → Secrets and variables → Actions** and add:
+1. Open **Settings → Secrets and variables → Actions** and add:
    - `NEXT_PUBLIC_SUPABASE_URL` — the hosted Supabase project URL.
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — the project's anon/public key (never the service-role key).
-3. Confirm the workflow's first run succeeds. A failed build is not deployed; check the run under
+2. The workflow asks `actions/configure-pages` to enable Pages automatically. If GitHub reports
+   that a Pages site is not configured, add a `PAGES_TOKEN` secret: create a fine-grained PAT
+   restricted to this repository with **Administration: write** and **Pages: write** permissions.
+   The workflow uses it only for Pages setup; do not commit or expose it. Alternatively, an owner
+   can enable Pages once under **Settings → Pages → Build and deployment → Source: GitHub Actions**,
+   after which `PAGES_TOKEN` is not needed.
+3. Confirm the workflow's run succeeds. A failed build is not deployed; check the run under
    the repository's **Actions** tab.
 
 After each set of database edits, sign in to `/admin/`, open the dashboard and click **Publish
