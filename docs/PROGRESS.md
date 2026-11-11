@@ -255,7 +255,8 @@ Current phase: **5 — Deploy — in progress (2026-10-11, owner-approved urgent
 ### 2026-11-11 — Retry after Supabase Actions secrets were added
 **Verified**
 - The previous run (`43034616942`) successfully configured GitHub Pages but stopped because `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` were absent from Actions secrets at that time.
-- The owner reports both values have now been added in GitHub settings. No newer workflow run exists yet; a documentation-only push will trigger a fresh deployment attempt without including environment files.
+- The owner reported both values had been added in GitHub settings. A documentation-only push triggered run `43037526344`; Pages setup, Supabase secret validation, static build, artifact upload, and deploy all succeeded.
+- Live Pages checks returned HTTP 200 for `/`, `/ar/`, `/en/`, and `/404.html`; `/ar/` renders `lang=ar dir=rtl` and `/en/` renders `lang=en dir=ltr`.
 
 **Open**
-- Verify the fresh run validates both Actions secrets, builds the static site against hosted Supabase, and deploys a Pages artifact. If the build cannot reach the database or the site URL still returns 404, use the new run's exact error to identify the remaining setup.
+- None for initial Pages deployment. Continue with the remaining Phase 5 hosted Edge Function/keep-alive setup and subsequent project phases.
