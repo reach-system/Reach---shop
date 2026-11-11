@@ -247,7 +247,15 @@ Current phase: **5 — Deploy — in progress (2026-10-11, owner-approved urgent
 
 **Verified**
 - Checked GitHub Actions run `43030441662`: dependency installation succeeded, then `Configure GitHub Pages` failed with `Get Pages site failed ... Not Found`; the build and deploy jobs were skipped.
-- The new workflow has not yet been pushed or run. A successful Pages deployment also requires the hosted Supabase URL and anon key secrets.
+- The enablement change was pushed and confirmed working in run `43034616942`. Its Supabase-secret validation failed because both Actions secrets were absent at that time; a new run is needed after their configuration.
 
 **Open**
-- After this workflow change is pushed, add `PAGES_TOKEN` if automatic Pages enablement is denied, and add `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Confirm the next Actions run reaches the static build and deployment jobs.
+- If automatic Pages enablement is denied in a future run, add `PAGES_TOKEN`. Confirm the next Actions run reaches the static build and deployment jobs.
+
+### 2026-11-11 — Retry after Supabase Actions secrets were added
+**Verified**
+- The previous run (`43034616942`) successfully configured GitHub Pages but stopped because `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` were absent from Actions secrets at that time.
+- The owner reports both values have now been added in GitHub settings. No newer workflow run exists yet; a documentation-only push will trigger a fresh deployment attempt without including environment files.
+
+**Open**
+- Verify the fresh run validates both Actions secrets, builds the static site against hosted Supabase, and deploys a Pages artifact. If the build cannot reach the database or the site URL still returns 404, use the new run's exact error to identify the remaining setup.
